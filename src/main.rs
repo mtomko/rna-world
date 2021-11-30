@@ -78,9 +78,10 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_edit_distance() {
-        let mut app =
-            test::init_service(App::new().route("/edit-distance/{s1}/{s2}", web::get().to(edit_distance)))
-                .await;
+        let mut app = test::init_service(
+            App::new().route("/edit-distance/{s1}/{s2}", web::get().to(edit_distance)),
+        )
+        .await;
         let req = test::TestRequest::get()
             .uri("/edit-distance/GTGCCC/GTCGGG")
             .to_request();

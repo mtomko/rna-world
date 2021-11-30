@@ -1,5 +1,6 @@
 use std::cmp::min;
 
+#[allow(clippy::needless_range_loop)]
 pub fn levenshtein(a: &str, b: &str) -> usize {
     let w1 = a.chars().collect::<Vec<_>>();
     let w2 = b.chars().collect::<Vec<_>>();
