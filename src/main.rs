@@ -4,7 +4,7 @@ mod str;
 
 #[get("/")]
 async fn hello() -> impl Responder {
-    HttpResponse::Ok().body("Hello world!")
+    HttpResponse::Ok().body("Hello, rna-world!")
 }
 
 async fn rc(req_body: String) -> impl Responder {
