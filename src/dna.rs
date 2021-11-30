@@ -1,4 +1,4 @@
-fn complement_dna(dna: String) -> String {
+pub fn complement_dna(dna: String) -> String {
     let mut comp = String::new();
     for b in dna.chars() {
         let bc = match b {
