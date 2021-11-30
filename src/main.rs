@@ -1,5 +1,6 @@
 use actix_web::{get, middleware::Logger, web, App, HttpResponse, HttpServer, Responder};
 mod dna;
+mod str;
 
 #[get("/")]
 async fn hello() -> impl Responder {
@@ -8,6 +9,12 @@ async fn hello() -> impl Responder {
 
 async fn rc(req_body: String) -> impl Responder {
     HttpResponse::Ok().body(dna::reverse_complement(req_body))
+}
+
+async fn edit_distance(path: web::Path<(String, String)>) -> impl Responder {
+    let i = path.into_inner();
+    let d = str::levenshtein(&i.0, &i.1);
+    HttpResponse::Ok().body(d.to_string())
 }
 
 #[actix_web::main]
@@ -20,6 +27,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .service(hello)
+            .route("/edit-distance/{s1}/{s2}", web::get().to(edit_distance))
             .route("/rc", web::post().to(rc))
     })
     .bind(("127.0.0.1", 8080))?
@@ -66,5 +74,18 @@ mod tests {
         let resp = test::call_service(&mut app, req).await;
         assert!(resp.status().is_success());
         assert_eq!(resp.response().body().as_str(), "TCCAGGAAG");
+    }
+
+    #[actix_rt::test]
+    async fn test_edit_distance() {
+        let mut app =
+            test::init_service(App::new().route("/edit-distance/{s1}/{s2}", web::get().to(edit_distance)))
+                .await;
+        let req = test::TestRequest::get()
+            .uri("/edit-distance/GTGCCC/GTCGGG")
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert!(resp.status().is_success());
+        assert_eq!(resp.response().body().as_str(), "4");
     }
 }
