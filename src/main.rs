@@ -1,5 +1,6 @@
-use actix_web::{get, middleware::Logger, web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, middleware::Logger, post, web, App, HttpResponse, HttpServer, Responder};
 mod dna;
+use std::sync::Mutex;
 mod str;
 
 #[get("/")]
@@ -8,13 +9,65 @@ async fn hello() -> impl Responder {
 }
 
 async fn rc(req_body: String) -> impl Responder {
-    HttpResponse::Ok().body(dna::reverse_complement(req_body))
+    HttpResponse::Ok().body(dna::reverse_complement(&req_body))
 }
 
 async fn edit_distance(path: web::Path<(String, String)>) -> impl Responder {
     let i = path.into_inner();
     let d = str::levenshtein(&i.0, &i.1);
     HttpResponse::Ok().body(d.to_string())
+}
+
+#[post("/restriction-enzymes")]
+async fn add_restriction_enzyme(
+    data: web::Data<RnaWorldState>,
+    form: web::Form<dna::RestrictionEnzyme>,
+) -> impl Responder {
+    let mut enzymes = data.restriction_enzymes.lock().unwrap();
+    // unsure how to take ownership of the enzyme from the form
+    let new_enzyme = dna::RestrictionEnzyme {
+        name: form.name.clone(),
+        recognition_sequence: form.recognition_sequence.clone(),
+    };
+    enzymes.push(new_enzyme);
+    HttpResponse::Ok()
+        .content_type("text/plain")
+        .body(&form.name)
+}
+
+#[get("/restriction-enzymes")]
+async fn list_restriction_enzymes(data: web::Data<RnaWorldState>) -> impl Responder {
+    let enzymes = data.restriction_enzymes.lock().unwrap();
+    let mut body = String::from("Name;Recognition Sequence\n");
+    for e in enzymes.iter() {
+        body += &e.name;
+        body += ";";
+        body += &e.recognition_sequence;
+        body += "\n";
+    }
+    HttpResponse::Ok().content_type("text/csv").body(body)
+}
+
+async fn find_restriction_sites(
+    data: web::Data<RnaWorldState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let enzymes = data.restriction_enzymes.lock().unwrap();
+    let sites = dna::find_restriction_sites(&path, &enzymes);
+    let mut body = String::from("Index;Name;Recognition Sequence\n");
+    for (i, s) in sites.iter() {
+        body += &i.to_string();
+        body += ";";
+        body += &s.name;
+        body += ";";
+        body += &s.recognition_sequence;
+        body += "\n";
+    }
+    HttpResponse::Ok().content_type("text/csv").body(body)
+}
+
+struct RnaWorldState {
+    restriction_enzymes: Mutex<Vec<dna::RestrictionEnzyme>>,
 }
 
 #[actix_web::main]
@@ -24,9 +77,18 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(|| {
         App::new()
+            .app_data(web::Data::new(RnaWorldState {
+                restriction_enzymes: Mutex::new(vec![]),
+            }))
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
+            .service(add_restriction_enzyme)
+            .service(list_restriction_enzymes)
             .service(hello)
+            .route(
+                "/restriction-sites/{s1}",
+                web::get().to(find_restriction_sites),
+            )
             .route("/edit-distance/{s1}/{s2}", web::get().to(edit_distance))
             .route("/rc", web::post().to(rc))
     })
