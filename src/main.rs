@@ -1,6 +1,7 @@
-use actix_web::{get, middleware::Logger, post, web, App, HttpResponse, HttpServer, Responder};
-mod dna;
+use actix_web::middleware::Logger;
+use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use std::sync::Mutex;
+mod dna;
 mod str;
 
 #[get("/")]
@@ -35,17 +36,56 @@ async fn add_restriction_enzyme(
         .body(&form.name)
 }
 
+#[derive(Debug, Clone)]
+struct CsvError;
+
+fn enzymes_csv(enzymes: &[dna::RestrictionEnzyme]) -> Result<String, CsvError> {
+    let mut wtr = csv::Writer::from_writer(vec![]);
+    wtr.write_record(&["Name", "Recognition Sequence"])
+        .map_err(|_| CsvError)
+        .and_then(|_| {
+            let r: Result<Vec<_>, _> = enzymes
+                .iter()
+                .map(|e| {
+                    wtr.write_record(&[&e.name, &e.recognition_sequence])
+                        .map_err(|_| CsvError)
+                })
+                .collect();
+            r
+        })
+        .and_then(|_| wtr.into_inner().map_err(|_| CsvError))
+        .and_then(|r| String::from_utf8(r).map_err(|_| CsvError))
+}
+
 #[get("/restriction-enzymes")]
 async fn list_restriction_enzymes(data: web::Data<RnaWorldState>) -> impl Responder {
     let enzymes = data.restriction_enzymes.lock().unwrap();
-    let mut body = String::from("Name;Recognition Sequence\n");
-    for e in enzymes.iter() {
-        body += &e.name;
-        body += ";";
-        body += &e.recognition_sequence;
-        body += "\n";
+    match enzymes_csv(&enzymes) {
+        Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
+        Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
     }
-    HttpResponse::Ok().content_type("text/csv").body(body)
+}
+
+fn restriction_sites_csv(sites: &[(usize, &dna::RestrictionEnzyme)]) -> Result<String, CsvError> {
+    let mut wtr = csv::Writer::from_writer(vec![]);
+    wtr.write_record(&["Index", "Name", "Recognition Sequence"])
+        .map_err(|_| CsvError)
+        .and_then(|_| {
+            let r: Result<Vec<_>, _> = sites
+                .iter()
+                .map(|(i, e)| {
+                    wtr.write_record(&[
+                        i.to_string(),
+                        e.name.clone(),
+                        e.recognition_sequence.clone(),
+                    ])
+                    .map_err(|_| CsvError)
+                })
+                .collect();
+            r
+        })
+        .and_then(|_| wtr.into_inner().map_err(|_| CsvError))
+        .and_then(|r| String::from_utf8(r).map_err(|_| CsvError))
 }
 
 async fn find_restriction_sites(
@@ -54,16 +94,10 @@ async fn find_restriction_sites(
 ) -> impl Responder {
     let enzymes = data.restriction_enzymes.lock().unwrap();
     let sites = dna::find_restriction_sites(&path, &enzymes);
-    let mut body = String::from("Index;Name;Recognition Sequence\n");
-    for (i, s) in sites.iter() {
-        body += &i.to_string();
-        body += ";";
-        body += &s.name;
-        body += ";";
-        body += &s.recognition_sequence;
-        body += "\n";
+    match restriction_sites_csv(&sites[..]) {
+        Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
+        Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
     }
-    HttpResponse::Ok().content_type("text/csv").body(body)
 }
 
 struct RnaWorldState {
