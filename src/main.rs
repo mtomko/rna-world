@@ -2,14 +2,16 @@ use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
 use std::sync::Mutex;
 mod dna;
-mod str;
+mod seq;
 
 mod service {
+
+    use super::dna;
 
     #[derive(Debug, Clone)]
     pub struct CsvError;
 
-    pub fn enzymes_csv(enzymes: &[super::dna::RestrictionEnzyme]) -> Result<String, CsvError> {
+    pub fn enzymes_csv(enzymes: &[dna::RestrictionEnzyme]) -> Result<String, CsvError> {
         let mut wtr = csv::Writer::from_writer(vec![]);
         wtr.write_record(&["Name", "Recognition Sequence"])
             .map_err(|_| CsvError)
@@ -28,7 +30,7 @@ mod service {
     }
 
     pub fn restriction_sites_csv(
-        sites: &[(usize, &super::dna::RestrictionEnzyme)],
+        sites: &[(usize, &dna::RestrictionEnzyme)],
     ) -> Result<String, CsvError> {
         let mut wtr = csv::Writer::from_writer(vec![]);
         wtr.write_record(&["Index", "Name", "Recognition Sequence"])
@@ -53,11 +55,14 @@ mod service {
 }
 
 mod handler {
+    use super::dna;
+    use super::seq;
+    use super::service;
     use actix_web::{get, post, web, HttpResponse, Responder};
     use std::sync::Mutex;
 
     pub struct RnaWorldState {
-        pub restriction_enzymes: Mutex<Vec<super::dna::RestrictionEnzyme>>,
+        pub restriction_enzymes: Mutex<Vec<dna::RestrictionEnzyme>>,
     }
 
     #[get("/")]
@@ -66,23 +71,23 @@ mod handler {
     }
 
     pub async fn rc(req_body: String) -> impl Responder {
-        HttpResponse::Ok().body(super::dna::reverse_complement(&req_body))
+        HttpResponse::Ok().body(dna::reverse_complement(&req_body))
     }
 
     pub async fn edit_distance(path: web::Path<(String, String)>) -> impl Responder {
         let i = path.into_inner();
-        let d = super::str::levenshtein(&i.0, &i.1);
+        let d = seq::levenshtein(&i.0, &i.1);
         HttpResponse::Ok().body(d.to_string())
     }
 
     #[post("/restriction-enzymes")]
     pub async fn add_restriction_enzyme(
         data: web::Data<RnaWorldState>,
-        form: web::Form<super::dna::RestrictionEnzyme>,
+        form: web::Form<dna::RestrictionEnzyme>,
     ) -> impl Responder {
         let mut enzymes = data.restriction_enzymes.lock().unwrap();
         // unsure how to take ownership of the enzyme from the form
-        let new_enzyme = super::dna::RestrictionEnzyme {
+        let new_enzyme = dna::RestrictionEnzyme {
             name: form.name.clone(),
             recognition_sequence: form.recognition_sequence.clone(),
         };
@@ -95,7 +100,7 @@ mod handler {
     #[get("/restriction-enzymes")]
     pub async fn list_restriction_enzymes(data: web::Data<RnaWorldState>) -> impl Responder {
         let enzymes = data.restriction_enzymes.lock().unwrap();
-        match super::service::enzymes_csv(&enzymes) {
+        match service::enzymes_csv(&enzymes) {
             Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
             Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
         }
@@ -106,8 +111,8 @@ mod handler {
         path: web::Path<String>,
     ) -> impl Responder {
         let enzymes = data.restriction_enzymes.lock().unwrap();
-        let sites = super::dna::find_restriction_sites(&path, &enzymes);
-        match super::service::restriction_sites_csv(&sites[..]) {
+        let sites = dna::find_restriction_sites(&path, &enzymes);
+        match service::restriction_sites_csv(&sites[..]) {
             Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
             Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
         }
