@@ -9,5 +9,5 @@ services:
       - POSTGRES_DB=rna-world
       - POSTGRES_USER=test
       - POSTGRES_PASSWORD=test
-#    volumes:
-#      - ./modules/sql/src/test/resources/db/:/docker-entrypoint-initdb.d/
+    volumes:
+      - ./migrations/:/docker-entrypoint-initdb.d/
