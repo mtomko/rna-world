@@ -2,39 +2,38 @@ use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
 use std::sync::Mutex;
 mod dna;
+mod errors;
 mod seq;
 
 mod service {
 
     use crate::dna;
+    use crate::errors::RWError;
 
-    #[derive(Debug, Clone)]
-    pub struct CsvError;
-
-    pub fn enzymes_csv(enzymes: &[dna::RestrictionEnzyme]) -> Result<String, CsvError> {
+    pub fn enzymes_csv(enzymes: &[dna::RestrictionEnzyme]) -> Result<String, RWError> {
         let mut wtr = csv::Writer::from_writer(vec![]);
         wtr.write_record(&["Name", "Recognition Sequence"])
-            .map_err(|_| CsvError)
+            .map_err(|_| RWError::CsvError)
             .and_then(|_| {
                 let r: Result<Vec<_>, _> = enzymes
                     .iter()
                     .map(|e| {
                         wtr.write_record(&[&e.name, &e.recognition_sequence])
-                            .map_err(|_| CsvError)
+                            .map_err(|_| RWError::CsvError)
                     })
                     .collect();
                 r
             })
-            .and_then(|_| wtr.into_inner().map_err(|_| CsvError))
-            .and_then(|r| String::from_utf8(r).map_err(|_| CsvError))
+            .and_then(|_| wtr.into_inner().map_err(|_| RWError::CsvError))
+            .and_then(|r| String::from_utf8(r).map_err(|_| RWError::CsvError))
     }
 
     pub fn restriction_sites_csv(
         sites: &[(usize, &dna::RestrictionEnzyme)],
-    ) -> Result<String, CsvError> {
+    ) -> Result<String, RWError> {
         let mut wtr = csv::Writer::from_writer(vec![]);
         wtr.write_record(&["Index", "Name", "Recognition Sequence"])
-            .map_err(|_| CsvError)
+            .map_err(|_| RWError::CsvError)
             .and_then(|_| {
                 let r: Result<Vec<_>, _> = sites
                     .iter()
@@ -44,13 +43,13 @@ mod service {
                             e.name.clone(),
                             e.recognition_sequence.clone(),
                         ])
-                        .map_err(|_| CsvError)
+                        .map_err(|_| RWError::CsvError)
                     })
                     .collect();
                 r
             })
-            .and_then(|_| wtr.into_inner().map_err(|_| CsvError))
-            .and_then(|r| String::from_utf8(r).map_err(|_| CsvError))
+            .and_then(|_| wtr.into_inner().map_err(|_| RWError::CsvError))
+            .and_then(|r| String::from_utf8(r).map_err(|_| RWError::CsvError))
     }
 }
 
@@ -100,10 +99,8 @@ mod handler {
     #[get("/restriction-enzymes")]
     pub async fn list_restriction_enzymes(data: web::Data<RnaWorldState>) -> impl Responder {
         let enzymes = data.restriction_enzymes.lock().unwrap();
-        match service::enzymes_csv(&enzymes) {
-            Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
-            Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
-        }
+        service::enzymes_csv(&enzymes)
+            .map(|body| HttpResponse::Ok().content_type("text/csv").body(body))
     }
 
     pub async fn find_restriction_sites(
@@ -112,10 +109,8 @@ mod handler {
     ) -> impl Responder {
         let enzymes = data.restriction_enzymes.lock().unwrap();
         let sites = dna::find_restriction_sites(&path, &enzymes);
-        match service::restriction_sites_csv(&sites[..]) {
-            Ok(body) => HttpResponse::Ok().content_type("text/csv").body(body),
-            Err(_) => HttpResponse::InternalServerError().body("Unable to construct response"),
-        }
+        service::restriction_sites_csv(&sites[..])
+            .map(|body| HttpResponse::Ok().content_type("text/csv").body(body))
     }
 }
 
