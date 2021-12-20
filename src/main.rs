@@ -6,7 +6,7 @@ mod seq;
 
 mod service {
 
-    use super::dna;
+    use crate::dna;
 
     #[derive(Debug, Clone)]
     pub struct CsvError;
@@ -55,9 +55,9 @@ mod service {
 }
 
 mod handler {
-    use super::dna;
-    use super::seq;
-    use super::service;
+    use crate::dna;
+    use crate::seq;
+    use crate::service;
     use actix_web::{get, post, web, HttpResponse, Responder};
     use std::sync::Mutex;
 
