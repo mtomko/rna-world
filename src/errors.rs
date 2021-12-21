@@ -12,6 +12,7 @@ pub enum RWError {
     PGMError(PGMError),
     PoolError(PoolError),
 }
+
 impl std::error::Error for RWError {}
 
 impl ResponseError for RWError {

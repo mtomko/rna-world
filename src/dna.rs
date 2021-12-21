@@ -4,9 +4,8 @@ use std::fmt::Debug;
 use tokio_pg_mapper_derive::PostgresMapper;
 
 pub fn complement_dna(dna: &str) -> String {
-    let mut comp = String::new();
-    for b in dna.chars() {
-        let bc = match b {
+    dna.chars()
+        .map(|b| match b {
             'A' => 'T',
             'a' => 'T',
             'T' => 'A',
@@ -16,18 +15,16 @@ pub fn complement_dna(dna: &str) -> String {
             'G' => 'C',
             'g' => 'G',
             _ => 'N',
-        };
-        comp.push(bc);
-    }
-    comp
+        })
+        .collect::<String>()
 }
 
-fn reverse(s: String) -> String {
+fn reverse(s: &str) -> String {
     s.chars().rev().collect::<String>()
 }
 
 pub fn reverse_complement(dna: &str) -> String {
-    reverse(complement_dna(dna))
+    reverse(&complement_dna(dna))
 }
 
 #[derive(Debug, Deserialize, PartialEq, PostgresMapper)]
@@ -42,23 +39,20 @@ pub fn find_restriction_sites<'a>(
     enzymes: &'a [RestrictionEnzyme],
 ) -> Vec<(usize, &'a RestrictionEnzyme)> {
     let dna_len = dna.len();
-    let mut ret = Vec::new();
+    enzymes
+        .iter()
+        .flat_map(|enzyme| {
+            let rs = &enzyme.recognition_sequence;
+            let forward_sites = dna.match_indices(rs).map(|(i, _)| (i + 1, enzyme));
 
-    for enzyme in enzymes {
-        let rs = &enzyme.recognition_sequence;
-        let forward_sites = dna.match_indices(rs);
-        for (i, _) in forward_sites {
-            ret.push((i + 1, enzyme));
-        }
+            let rc_rs = reverse_complement(rs);
+            let reverse_sites = dna
+                .match_indices(&rc_rs)
+                .map(|(i, s)| (dna_len - s.len() - i + 1, enzyme));
 
-        let rc_rs = reverse_complement(rs);
-        let reverse_sites = dna.match_indices(&rc_rs);
-        for (i, s) in reverse_sites {
-            ret.push((dna_len - s.len() - i + 1, enzyme));
-        }
-    }
-
-    ret
+            forward_sites.chain(reverse_sites).collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 #[cfg(test)]
