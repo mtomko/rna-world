@@ -1,5 +1,5 @@
 use actix_web::middleware::Logger;
-use actix_web::{web, App, HttpServer};
+use actix_web::{App, HttpServer};
 use dotenv::dotenv;
 use tokio_postgres::NoTls;
 mod config;
@@ -24,10 +24,12 @@ mod handler {
         HttpResponse::Ok().body("Hello, rna-world!")
     }
 
+    #[post("/rc")]
     pub async fn rc(req_body: String) -> impl Responder {
         HttpResponse::Ok().body(dna::reverse_complement(&req_body))
     }
 
+    #[get("/edit-distance/{s1}/{s2}")]
     pub async fn edit_distance(path: web::Path<(String, String)>) -> impl Responder {
         let i = path.into_inner();
         let d = seq::levenshtein(&i.0, &i.1);
@@ -69,6 +71,7 @@ mod handler {
             .map(|body| HttpResponse::Ok().content_type("text/csv").body(body))
     }
 
+    #[get("/restriction-sites/{s1}")]
     pub async fn find_restriction_sites(
         db_pool: web::Data<Pool>,
         path: web::Path<String>,
@@ -94,18 +97,12 @@ async fn main() -> std::io::Result<()> {
             .data(config.pg.create_pool(NoTls).unwrap())
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
+            .service(handler::rc)
+            .service(handler::edit_distance)
             .service(handler::add_restriction_enzyme)
             .service(handler::list_restriction_enzymes)
             .service(handler::hello)
-            .route(
-                "/restriction-sites/{s1}",
-                web::get().to(handler::find_restriction_sites),
-            )
-            .route(
-                "/edit-distance/{s1}/{s2}",
-                web::get().to(handler::edit_distance),
-            )
-            .route("/rc", web::post().to(handler::rc))
+            .service(handler::find_restriction_sites)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
@@ -117,7 +114,7 @@ mod tests {
     use super::*;
     use actix_http::http::Method;
     use actix_web::body::{Body, ResponseBody};
-    use actix_web::{test, web, App};
+    use actix_web::{test, App};
 
     // see for example:
     // https://stackoverflow.com/a/65867506
@@ -142,8 +139,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_rc() {
-        let mut app =
-            test::init_service(App::new().route("/rc", web::post().to(handler::rc))).await;
+        let mut app = test::init_service(App::new().service(handler::rc)).await;
         let req = test::TestRequest::with_header("content-type", "text/plain")
             .method(Method::POST)
             .uri("/rc")
@@ -156,11 +152,7 @@ mod tests {
 
     #[actix_rt::test]
     async fn test_edit_distance() {
-        let mut app = test::init_service(App::new().route(
-            "/edit-distance/{s1}/{s2}",
-            web::get().to(handler::edit_distance),
-        ))
-        .await;
+        let mut app = test::init_service(App::new().service(handler::edit_distance)).await;
         let req = test::TestRequest::get()
             .uri("/edit-distance/GTGCCC/GTCGGG")
             .to_request();
