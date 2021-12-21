@@ -41,5 +41,6 @@ mod tests {
         assert_eq!(levenshtein("CTCGAG", "CTCGAC"), 1);
         assert_eq!(levenshtein("CTCGA", "CTCGAC"), 1);
         assert_eq!(levenshtein("CTCGAG", "CTCGA"), 1);
+        assert_eq!(levenshtein("AAATTT", "CATTT"), 2);
     }
 }
