@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::cmp::PartialEq;
 use std::fmt::Debug;
+use tokio_pg_mapper_derive::PostgresMapper;
 
 pub fn complement_dna(dna: &str) -> String {
     let mut comp = String::new();
@@ -29,7 +30,8 @@ pub fn reverse_complement(dna: &str) -> String {
     reverse(complement_dna(dna))
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, PostgresMapper)]
+#[pg_mapper(table = "restriction_enzyme")]
 pub struct RestrictionEnzyme {
     pub name: String,
     pub recognition_sequence: String,
