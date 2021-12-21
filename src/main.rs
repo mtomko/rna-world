@@ -1,68 +1,23 @@
 use actix_web::middleware::Logger;
 use actix_web::{web, App, HttpServer};
-use std::sync::Mutex;
+use dotenv::dotenv;
+use tokio_postgres::NoTls;
+mod config;
+mod db;
 mod dna;
 mod errors;
 mod seq;
-
-mod service {
-
-    use crate::dna;
-    use crate::errors::RWError;
-
-    pub fn enzymes_csv(enzymes: &[dna::RestrictionEnzyme]) -> Result<String, RWError> {
-        let mut wtr = csv::Writer::from_writer(vec![]);
-        wtr.write_record(&["Name", "Recognition Sequence"])
-            .map_err(|_| RWError::CsvError)
-            .and_then(|_| {
-                let r: Result<Vec<_>, _> = enzymes
-                    .iter()
-                    .map(|e| {
-                        wtr.write_record(&[&e.name, &e.recognition_sequence])
-                            .map_err(|_| RWError::CsvError)
-                    })
-                    .collect();
-                r
-            })
-            .and_then(|_| wtr.into_inner().map_err(|_| RWError::CsvError))
-            .and_then(|r| String::from_utf8(r).map_err(|_| RWError::CsvError))
-    }
-
-    pub fn restriction_sites_csv(
-        sites: &[(usize, &dna::RestrictionEnzyme)],
-    ) -> Result<String, RWError> {
-        let mut wtr = csv::Writer::from_writer(vec![]);
-        wtr.write_record(&["Index", "Name", "Recognition Sequence"])
-            .map_err(|_| RWError::CsvError)
-            .and_then(|_| {
-                let r: Result<Vec<_>, _> = sites
-                    .iter()
-                    .map(|(i, e)| {
-                        wtr.write_record(&[
-                            i.to_string(),
-                            e.name.clone(),
-                            e.recognition_sequence.clone(),
-                        ])
-                        .map_err(|_| RWError::CsvError)
-                    })
-                    .collect();
-                r
-            })
-            .and_then(|_| wtr.into_inner().map_err(|_| RWError::CsvError))
-            .and_then(|r| String::from_utf8(r).map_err(|_| RWError::CsvError))
-    }
-}
+mod service;
 
 mod handler {
+    use crate::db;
     use crate::dna;
+    use crate::errors::RWError;
     use crate::seq;
     use crate::service;
+    use actix_http::Error;
     use actix_web::{get, post, web, HttpResponse, Responder};
-    use std::sync::Mutex;
-
-    pub struct RnaWorldState {
-        pub restriction_enzymes: Mutex<Vec<dna::RestrictionEnzyme>>,
-    }
+    use deadpool_postgres::{Client, Pool};
 
     #[get("/")]
     pub async fn hello() -> impl Responder {
@@ -81,33 +36,44 @@ mod handler {
 
     #[post("/restriction-enzymes")]
     pub async fn add_restriction_enzyme(
-        data: web::Data<RnaWorldState>,
         form: web::Form<dna::RestrictionEnzyme>,
-    ) -> impl Responder {
-        let mut enzymes = data.restriction_enzymes.lock().unwrap();
+        db_pool: web::Data<Pool>,
+    ) -> Result<HttpResponse, Error> {
+        let client: Client = db_pool.get().await.map_err(RWError::PoolError)?;
+
         // unsure how to take ownership of the enzyme from the form
         let new_enzyme = dna::RestrictionEnzyme {
             name: form.name.clone(),
             recognition_sequence: form.recognition_sequence.clone(),
         };
-        enzymes.push(new_enzyme);
-        HttpResponse::Ok()
+
+        let _ = db::add_restriction_enzyme(&client, &new_enzyme).await?;
+
+        Ok(HttpResponse::Ok()
             .content_type("text/plain")
-            .body(&form.name)
+            .body(&form.name))
+    }
+
+    async fn restriction_enzymes(
+        db_pool: web::Data<Pool>,
+    ) -> Result<Vec<dna::RestrictionEnzyme>, RWError> {
+        let client: Client = db_pool.get().await.map_err(RWError::PoolError)?;
+        db::restriction_enzymes(&client).await
     }
 
     #[get("/restriction-enzymes")]
-    pub async fn list_restriction_enzymes(data: web::Data<RnaWorldState>) -> impl Responder {
-        let enzymes = data.restriction_enzymes.lock().unwrap();
+    pub async fn list_restriction_enzymes(db_pool: web::Data<Pool>) -> impl Responder {
+        let enzymes = restriction_enzymes(db_pool).await?;
+
         service::enzymes_csv(&enzymes)
             .map(|body| HttpResponse::Ok().content_type("text/csv").body(body))
     }
 
     pub async fn find_restriction_sites(
-        data: web::Data<RnaWorldState>,
+        db_pool: web::Data<Pool>,
         path: web::Path<String>,
     ) -> impl Responder {
-        let enzymes = data.restriction_enzymes.lock().unwrap();
+        let enzymes = restriction_enzymes(db_pool).await?;
         let sites = dna::find_restriction_sites(&path, &enzymes);
         service::restriction_sites_csv(&sites[..])
             .map(|body| HttpResponse::Ok().content_type("text/csv").body(body))
@@ -118,12 +84,14 @@ mod handler {
 async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=info");
     env_logger::init();
+    dotenv().ok();
 
-    HttpServer::new(|| {
+    // load configuration from the environment
+    let config = crate::config::Config::from_env().unwrap();
+
+    HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(handler::RnaWorldState {
-                restriction_enzymes: Mutex::new(vec![]),
-            }))
+            .data(config.pg.create_pool(NoTls).unwrap())
             .wrap(Logger::default())
             .wrap(Logger::new("%a %{User-Agent}i"))
             .service(handler::add_restriction_enzyme)
