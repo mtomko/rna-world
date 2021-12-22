@@ -43,13 +43,7 @@ mod handler {
     ) -> Result<HttpResponse, Error> {
         let client: Client = db_pool.get().await.map_err(RWError::PoolError)?;
 
-        // unsure how to take ownership of the enzyme from the form
-        let new_enzyme = dna::RestrictionEnzyme {
-            name: form.name.clone(),
-            recognition_sequence: form.recognition_sequence.clone(),
-        };
-
-        let _ = db::add_restriction_enzyme(&client, &new_enzyme).await?;
+        db::add_restriction_enzyme(&client, &form).await?;
 
         Ok(HttpResponse::Ok()
             .content_type("text/plain")
