@@ -6,6 +6,7 @@ mod config;
 mod db;
 mod dna;
 mod errors;
+mod ops;
 mod seq;
 mod service;
 
