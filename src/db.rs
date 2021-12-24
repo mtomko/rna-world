@@ -1,3 +1,4 @@
+use crate::ops::ResultOps;
 use crate::{dna::RestrictionEnzyme, errors::RWError};
 use deadpool_postgres::Client;
 use std::time::SystemTime;
@@ -12,12 +13,11 @@ pub async fn restriction_enzymes(client: &Client) -> Result<Vec<RestrictionEnzym
     client
         .query(&stmt, &[])
         .await
-        .map(|rows| {
+        .bi_map(RWError::PGError, |rows| {
             rows.iter()
                 .map(|row| RestrictionEnzyme::from_row_ref(row).unwrap())
                 .collect::<Vec<RestrictionEnzyme>>()
         })
-        .map_err(RWError::PGError)
 }
 
 pub async fn add_restriction_enzyme(
@@ -39,6 +39,5 @@ pub async fn add_restriction_enzyme(
             ],
         )
         .await
-        .map(|_| ())
-        .map_err(RWError::PGError)
+        .bi_map(RWError::PGError, |_| ())
 }
