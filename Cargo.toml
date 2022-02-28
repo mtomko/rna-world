@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 actix-http = "2"
 actix-rt = "2"
-actix-web = "3"
+actix-web = "4"
 config = "0.11.0"
 csv = "1.1"
 deadpool-postgres = "0.5"
