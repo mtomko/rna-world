@@ -96,8 +96,8 @@ async fn main() -> std::io::Result<()> {
             .service(handler::edit_distance)
             .service(handler::add_restriction_enzyme)
             .service(handler::list_restriction_enzymes)
-            .service(handler::hello)
             .service(handler::find_restriction_sites)
+            .service(handler::hello)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
