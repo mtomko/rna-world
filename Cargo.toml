@@ -14,7 +14,7 @@ dotenv = "0.15.0"
 derive_more = "0.99"
 env_logger = "0.9.0"
 serde = { version = "1", features = ["derive"] }
-tokio = "0.2"
+tokio = "1.21"
 tokio-pg-mapper = "0.1"
 tokio-pg-mapper-derive = "0.1"
 tokio-postgres = { version = "0.5", features = ["with-uuid-0_8"] }
